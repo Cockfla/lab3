@@ -1,0 +1,8 @@
+$ kubectl logs deployment/app-elias-bahamondes -n ns-elias-bahamondes
+Found 2 pods, using pod/app-elias-bahamondes-7776fc49bf-spgq8
+[Nest] 1  - 10/04/2026, 10:45:17 PM     LOG [NestFactory] Starting Nest application...
+[Nest] 1  - 10/04/2026, 10:45:17 PM     LOG [InstanceLoader] AppModule dependencies initialized +23ms
+[Nest] 1  - 10/04/2026, 10:45:17 PM     LOG [RoutesResolver] AppController {/}: +68ms
+[Nest] 1  - 10/04/2026, 10:45:17 PM     LOG [RouterExplorer] Mapped {/, GET} route +4ms
+[Nest] 1  - 10/04/2026, 10:45:17 PM     LOG [RouterExplorer] Mapped {/lab, GET} route +0ms
+[Nest] 1  - 10/04/2026, 10:45:17 PM     LOG [NestApplication] Nest application successfully started +2ms

@@ -1,0 +1,16 @@
+$ kubectl port-forward svc/svc-elias-bahamondes 8080:80 -n ns-elias-bahamondes
+Forwarding from 127.0.0.1:8080 -> 3000
+Forwarding from [::1]:8080 -> 3000
+Handling connection for 8080
+
+$ curl -i http://localhost:8080/lab
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Content-Type: application/json; charset=utf-8
+Content-Length: 85
+ETag: W/"55-mgDsZE0YYVRK2nTz2w/+ifIDVpo"
+Date: Sun, 04 Oct 2026 22:48:41 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"AMBIENTE":"laboratorio-elias-bahamondes","API_KEY":"api-key-elias-bahamondes-2026"}

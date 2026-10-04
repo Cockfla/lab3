@@ -1,98 +1,140 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Laboratorio 3 - Mi despliegue CI/CD en Kubernetes
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+**Alumno:** Elias Bahamondes (`elias-bahamondes`)
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+API NestJS que expone `GET /lab`, que devuelve la variable `AMBIENTE` (leída desde un ConfigMap) y `API_KEY` (leída desde un Secret). Se construye con Docker, se publica en Docker Hub y GitHub Container Registry, y se despliega en Kubernetes con un pipeline de Jenkins que usa agentes Kubernetes.
 
-## Description
+## Nombres usados
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+| Recurso          | Nombre                                                      |
+| ---------------- | ----------------------------------------------------------- |
+| Namespace        | `ns-elias-bahamondes`                                       |
+| Deployment       | `app-elias-bahamondes` (2 réplicas)                         |
+| Service          | `svc-elias-bahamondes` (puerto 80 → 3000)                   |
+| ConfigMap        | `config-elias-bahamondes` (`AMBIENTE`)                      |
+| Secret           | `secret-elias-bahamondes` (`API_KEY`)                       |
+| Imagen (nombre)  | `cockfla/tarea-final:elias-bahamondes`                      |
+| Imagen (versión) | `cockfla/tarea-final:${APP_VERSION}` (`APP_VERSION=3.0.0`)  |
+| Imagen GHCR      | `ghcr.io/cockfla/tarea-final:elias-bahamondes` y `:3.0.0`   |
+| Pipeline         | `Jenkinsfile.Elias-Bahamondes`                              |
+| Job Jenkins      | `lab3-elias-bahamondes`                                     |
 
-## Project setup
+## Estructura de la entrega
 
-```bash
-$ pnpm install
+```text
+Dockerfile                     # build multi-etapa (node:24-alpine), corre como usuario node
+.dockerignore
+Jenkinsfile.Elias-Bahamondes   # stages: install, test, build, push, deploy
+agent.yaml                     # pod del agente Kubernetes: node, docker + dind, kubectl
+entrega.yaml                   # Namespace, ConfigMap, Secret, Deployment, Service
+k8s/jenkins.yaml               # Jenkins dentro del cluster (JCasC + plugin kubernetes)
+k8s/jenkins-rbac.yaml          # ServiceAccount con permisos para el stage deploy
+scripts/evidencias.sh          # genera las salidas de comandos en evidencias/
+evidencias/                    # salidas de kubectl/curl y log del pipeline
+src/, test/                    # aplicación NestJS y sus tests
 ```
 
-## Compile and run the project
+## Requisitos
+
+- Docker Desktop con Kubernetes habilitado (cluster local `docker-desktop`)
+- `kubectl`
+- Cuenta en Docker Hub y en GitHub (token con `write:packages` para GHCR)
+- Node.js 24 y pnpm 11 (solo para correr la app fuera de Docker)
+
+## 1. Ejecutar la app localmente
 
 ```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+pnpm install
+pnpm test
+pnpm test:e2e
+AMBIENTE=local API_KEY=demo pnpm start
+curl http://localhost:3000/lab
 ```
 
-## Run tests
+Si `AMBIENTE` o `API_KEY` no están definidas, la app usa el valor `SIN COMPLETAR` y lo advierte en el log.
+
+## 2. Validación manual: build, push y apply
 
 ```bash
-# unit tests
-$ pnpm run test
+docker build -t cockfla/tarea-final:elias-bahamondes -t cockfla/tarea-final:3.0.0 .
+docker run --rm -p 3000:3000 -e AMBIENTE=local -e API_KEY=demo cockfla/tarea-final:elias-bahamondes
 
-# e2e tests
-$ pnpm run test:e2e
+docker login
+docker push cockfla/tarea-final:elias-bahamondes
+docker push cockfla/tarea-final:3.0.0
 
-# test coverage
-$ pnpm run test:cov
+kubectl apply -f entrega.yaml
+kubectl rollout status deployment/app-elias-bahamondes -n ns-elias-bahamondes
 ```
 
-## Deployment
+El Deployment usa el tag por nombre (`:elias-bahamondes`) con `imagePullPolicy: Always`. Por eso el pipeline hace `kubectl rollout restart` en cada despliegue, para que se descargue la imagen nueva.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## 3. Jenkins en el cluster
 
 ```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+kubectl create namespace jenkins
+kubectl -n jenkins create secret generic jenkins-admin --from-literal=password='<clave-admin>'
+kubectl apply -f k8s/jenkins.yaml -f k8s/jenkins-rbac.yaml
+kubectl -n jenkins rollout status deploy/jenkins
+kubectl -n jenkins port-forward svc/jenkins 8081:8080
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Abre <http://localhost:8081> y entra con el usuario `admin`. La clave se puede leer así:
 
-## Resources
+```bash
+kubectl -n jenkins get secret jenkins-admin -o jsonpath='{.data.password}' | base64 -d
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+`k8s/jenkins.yaml` instala los plugins (kubernetes, pipeline, git, credentials-binding, JCasC, job-dsl) y deja configurados:
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+- la nube **kubernetes**, que crea los agentes en el namespace `jenkins` y se conecta por WebSocket;
+- el job **`lab3-elias-bahamondes`** (Pipeline from SCM, rama `main`, Script Path `Jenkinsfile.Elias-Bahamondes`).
 
-## Support
+### Credenciales (nunca en el Jenkinsfile)
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+En *Manage Jenkins → Credentials → System → Global → Add Credentials*, crea dos credenciales de tipo **Username with password**:
 
-## Stay in touch
+| ID                           | Usuario   | Password                                             |
+| ---------------------------- | --------- | ---------------------------------------------------- |
+| `dockerhub-elias-bahamondes` | `cockfla` | Access Token de Docker Hub                           |
+| `ghcr-elias-bahamondes`      | `Cockfla` | Personal Access Token de GitHub con `write:packages` |
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+El Jenkinsfile solo referencia esos IDs con `withCredentials`, y el login se hace con `--password-stdin`.
 
-## License
+El stage `deploy` no usa kubeconfig: el pod del agente corre con la ServiceAccount `jenkins-deployer-elias-bahamondes`, que tiene permisos (RBAC) solo para los recursos de `entrega.yaml`.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+### Stages del pipeline
+
+| Stage     | Contenedor | Qué hace                                                                  |
+| --------- | ---------- | ------------------------------------------------------------------------- |
+| `install` | `node`     | instala pnpm 11.7.0 y corre `pnpm install --frozen-lockfile`              |
+| `test`    | `node`     | corre `pnpm test` (unitarios) y `pnpm test:e2e`                           |
+| `build`   | `docker`   | `docker build` con los tags `:elias-bahamondes` y `:3.0.0` para ambos registries |
+| `push`    | `docker`   | hace login y push a Docker Hub y a GHCR                                   |
+| `deploy`  | `kubectl`  | `kubectl apply -f entrega.yaml`, rollout restart/status y smoke test a `/lab` |
+
+El build usa Docker-in-Docker (`docker:29-dind`, privilegiado) como sidecar del pod agente.
+
+## 4. Evidencias
+
+```bash
+bash scripts/evidencias.sh
+```
+
+El script guarda en `evidencias/` la salida de: `cluster-info`, `get nodes`, `get pods`, `get deployment`, `get svc`, `logs`, `exec ... printenv`, `get configmap`, `get secret`, y el `port-forward` + `curl http://localhost:8080/lab`.
+
+> Nota: en el enunciado, `kubectl get deployment` y `kubectl get svc` aparecen con `-n app-...` y `-n svc-...`, y `get configmap` / `get secret` aparecen sin namespace. Como todos los recursos viven en `ns-elias-bahamondes`, el script usa `-n ns-elias-bahamondes` en todos los comandos.
+
+El log del pipeline se guarda en `evidencias/jenkins-pipeline.log` (Console Output del build exitoso).
+
+Respuesta esperada:
+
+```json
+{"AMBIENTE":"laboratorio-elias-bahamondes","API_KEY":"api-key-elias-bahamondes-2026"}
+```
+
+## Problemas comunes
+
+- **Pod sin iniciar:** `kubectl describe pod -n ns-elias-bahamondes <pod>` y `kubectl logs ...`.
+- **Service sin endpoints:** el label `app: app-elias-bahamondes` del template del Deployment debe coincidir con el `selector` del Service.
+- **Agente de Jenkins en `Pending`:** `kubectl -n jenkins get pods` y `kubectl -n jenkins describe pod <agente>`.

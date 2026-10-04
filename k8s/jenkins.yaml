@@ -1,0 +1,212 @@
+# Jenkins dentro del cluster local (namespace jenkins), configurado con JCasC.
+# Requiere crear antes el secreto con la clave del admin:
+#   kubectl create namespace jenkins
+#   kubectl -n jenkins create secret generic jenkins-admin --from-literal=password='<tu-clave>'
+# Luego:
+#   kubectl apply -f k8s/jenkins.yaml -f k8s/jenkins-rbac.yaml
+#   kubectl -n jenkins port-forward svc/jenkins 8081:8080   ->  http://localhost:8081
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jenkins
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins
+  namespace: jenkins
+---
+# Permisos del controlador Jenkins para crear los pods agentes en su namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jenkins-agents
+  namespace: jenkins
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/exec", "pods/log", "events"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jenkins-agents
+  namespace: jenkins
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: jenkins-agents
+subjects:
+  - kind: ServiceAccount
+    name: jenkins
+    namespace: jenkins
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jenkins-home
+  namespace: jenkins
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jenkins-plugins
+  namespace: jenkins
+data:
+  plugins.txt: |
+    kubernetes
+    workflow-aggregator
+    git
+    credentials-binding
+    configuration-as-code
+    job-dsl
+    pipeline-stage-view
+    timestamper
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jenkins-casc
+  namespace: jenkins
+data:
+  jenkins.yaml: |
+    jenkins:
+      systemMessage: "Jenkins - Laboratorio 3 - Elias Bahamondes"
+      numExecutors: 0
+      securityRealm:
+        local:
+          allowsSignup: false
+          users:
+            - id: "admin"
+              password: "${JENKINS_ADMIN_PASSWORD}"
+      authorizationStrategy:
+        loggedInUsersCanDoAnything:
+          allowAnonymousRead: false
+      clouds:
+        - kubernetes:
+            name: "kubernetes"
+            namespace: "jenkins"
+            jenkinsUrl: "http://jenkins.jenkins.svc.cluster.local:8080"
+            webSocket: true
+            containerCapStr: "5"
+    unclassified:
+      location:
+        url: "http://localhost:8081/"
+    jobs:
+      - script: |
+          pipelineJob('lab3-elias-bahamondes') {
+            description('Laboratorio 3 - CI/CD en Kubernetes - Elias Bahamondes')
+            definition {
+              cpsScm {
+                scm {
+                  git {
+                    remote { url('https://github.com/Cockfla/lab3.git') }
+                    branch('*/main')
+                  }
+                }
+                scriptPath('Jenkinsfile.Elias-Bahamondes')
+                lightweight(true)
+              }
+            }
+          }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jenkins
+  namespace: jenkins
+  labels:
+    app: jenkins
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: jenkins
+  template:
+    metadata:
+      labels:
+        app: jenkins
+    spec:
+      serviceAccountName: jenkins
+      securityContext:
+        fsGroup: 1000
+        runAsUser: 1000
+      initContainers:
+        - name: install-plugins
+          image: jenkins/jenkins:lts-jdk21
+          command: ["sh", "-c"]
+          args:
+            - jenkins-plugin-cli -f /plugins/plugins.txt -d /var/jenkins_home/plugins
+          volumeMounts:
+            - name: jenkins-home
+              mountPath: /var/jenkins_home
+            - name: plugins
+              mountPath: /plugins
+      containers:
+        - name: jenkins
+          image: jenkins/jenkins:lts-jdk21
+          env:
+            - name: JAVA_OPTS
+              value: "-Djenkins.install.runSetupWizard=false"
+            - name: CASC_JENKINS_CONFIG
+              value: /var/jenkins_casc/jenkins.yaml
+            - name: JENKINS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: jenkins-admin
+                  key: password
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /login
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: jenkins-home
+              mountPath: /var/jenkins_home
+            - name: casc
+              mountPath: /var/jenkins_casc
+      volumes:
+        - name: jenkins-home
+          persistentVolumeClaim:
+            claimName: jenkins-home
+        - name: plugins
+          configMap:
+            name: jenkins-plugins
+        - name: casc
+          configMap:
+            name: jenkins-casc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins
+  namespace: jenkins
+spec:
+  selector:
+    app: jenkins
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

@@ -1,0 +1,16 @@
+$ kubectl get configmap config-elias-bahamondes -n ns-elias-bahamondes -o yaml
+apiVersion: v1
+data:
+  AMBIENTE: laboratorio-elias-bahamondes
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"AMBIENTE":"laboratorio-elias-bahamondes"},"kind":"ConfigMap","metadata":{"annotations":{},"labels":{"app":"app-elias-bahamondes"},"name":"config-elias-bahamondes","namespace":"ns-elias-bahamondes"}}
+  creationTimestamp: "2026-10-04T22:45:11Z"
+  labels:
+    app: app-elias-bahamondes
+  name: config-elias-bahamondes
+  namespace: ns-elias-bahamondes
+  resourceVersion: "729"
+  uid: 84d29596-1455-4611-93ab-247ee7b5fdc3

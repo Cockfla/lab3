@@ -1,0 +1,135 @@
+// Laboratorio 3 - Pipeline CI/CD en Kubernetes
+// Alumno: Elias Bahamondes (elias-bahamondes)
+//
+// Credenciales requeridas en Jenkins (Manage Jenkins > Credentials), tipo "Username with password":
+//   - dockerhub-elias-bahamondes : usuario Docker Hub + Access Token
+//   - ghcr-elias-bahamondes      : usuario GitHub + Personal Access Token (write:packages)
+// Ninguna credencial queda escrita en este archivo.
+
+pipeline {
+  agent {
+    kubernetes {
+      yamlFile 'agent.yaml'
+      defaultContainer 'node'
+    }
+  }
+
+  options {
+    timeout(time: 30, unit: 'MINUTES')
+    buildDiscarder(logRotator(numToKeepStr: '10'))
+    disableConcurrentBuilds()
+  }
+
+  environment {
+    ALUMNO          = 'elias-bahamondes'
+    APP_VERSION     = '3.0.0'
+    IMAGE_NAME      = 'tarea-final'
+    DOCKERHUB_USER  = 'cockfla'
+    GHCR_USER       = 'cockfla'
+    DOCKERHUB_IMAGE = "docker.io/${DOCKERHUB_USER}/${IMAGE_NAME}"
+    GHCR_IMAGE      = "ghcr.io/${GHCR_USER}/${IMAGE_NAME}"
+    K8S_NAMESPACE   = "ns-${ALUMNO}"
+    K8S_DEPLOYMENT  = "app-${ALUMNO}"
+  }
+
+  stages {
+    stage('install') {
+      steps {
+        container('node') {
+          sh '''
+            node -v
+            npm install -g pnpm@11.7.0
+            pnpm -v
+            pnpm install --frozen-lockfile
+          '''
+        }
+      }
+    }
+
+    stage('test') {
+      steps {
+        container('node') {
+          sh '''
+            pnpm test
+            pnpm test:e2e
+          '''
+        }
+      }
+    }
+
+    stage('build') {
+      steps {
+        container('docker') {
+          sh '''
+            # Esperar a que el daemon dind este listo
+            for i in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 2; done
+            docker info --format 'Docker {{.ServerVersion}}'
+
+            docker build \
+              -t "${DOCKERHUB_IMAGE}:${ALUMNO}" \
+              -t "${DOCKERHUB_IMAGE}:${APP_VERSION}" \
+              -t "${GHCR_IMAGE}:${ALUMNO}" \
+              -t "${GHCR_IMAGE}:${APP_VERSION}" \
+              .
+            docker image ls | grep "${IMAGE_NAME}"
+          '''
+        }
+      }
+    }
+
+    stage('push') {
+      steps {
+        container('docker') {
+          withCredentials([usernamePassword(credentialsId: 'dockerhub-elias-bahamondes',
+                                            usernameVariable: 'REG_USER',
+                                            passwordVariable: 'REG_PASS')]) {
+            sh '''
+              echo "$REG_PASS" | docker login docker.io -u "$REG_USER" --password-stdin
+              docker push "${DOCKERHUB_IMAGE}:${ALUMNO}"
+              docker push "${DOCKERHUB_IMAGE}:${APP_VERSION}"
+              docker logout docker.io
+            '''
+          }
+          withCredentials([usernamePassword(credentialsId: 'ghcr-elias-bahamondes',
+                                            usernameVariable: 'REG_USER',
+                                            passwordVariable: 'REG_PASS')]) {
+            sh '''
+              echo "$REG_PASS" | docker login ghcr.io -u "$REG_USER" --password-stdin
+              docker push "${GHCR_IMAGE}:${ALUMNO}"
+              docker push "${GHCR_IMAGE}:${APP_VERSION}"
+              docker logout ghcr.io
+            '''
+          }
+        }
+      }
+    }
+
+    stage('deploy') {
+      steps {
+        container('kubectl') {
+          sh '''
+            kubectl apply -f entrega.yaml
+            # El tag por nombre no cambia entre builds: forzamos un rollout para traer la imagen nueva
+            kubectl rollout restart deployment/${K8S_DEPLOYMENT} -n ${K8S_NAMESPACE}
+            kubectl rollout status deployment/${K8S_DEPLOYMENT} -n ${K8S_NAMESPACE} --timeout=180s
+
+            kubectl get deployment,pods,svc,configmap,secret -n ${K8S_NAMESPACE}
+
+            echo "Smoke test /lab desde el pod:"
+            kubectl exec deployment/${K8S_DEPLOYMENT} -n ${K8S_NAMESPACE} -- wget -qO- http://localhost:3000/lab
+            echo
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "Pipeline OK: ${DOCKERHUB_IMAGE}:${ALUMNO} (${APP_VERSION}) desplegada en ${K8S_NAMESPACE}"
+    }
+    failure {
+      echo 'Pipeline fallido: revisar el log de la etapa con error.'
+    }
+  }
+}

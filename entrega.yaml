@@ -1,0 +1,105 @@
+# Laboratorio 3 - Despliegue CI/CD en Kubernetes
+# Alumno: Elias Bahamondes (elias-bahamondes)
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ns-elias-bahamondes
+  labels:
+    alumno: elias-bahamondes
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-elias-bahamondes
+  namespace: ns-elias-bahamondes
+  labels:
+    app: app-elias-bahamondes
+data:
+  AMBIENTE: "laboratorio-elias-bahamondes"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: secret-elias-bahamondes
+  namespace: ns-elias-bahamondes
+  labels:
+    app: app-elias-bahamondes
+type: Opaque
+stringData:
+  # Valor de demostracion para el laboratorio (no es una credencial real).
+  API_KEY: "api-key-elias-bahamondes-2026"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-elias-bahamondes
+  namespace: ns-elias-bahamondes
+  labels:
+    app: app-elias-bahamondes
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: app-elias-bahamondes
+  template:
+    metadata:
+      labels:
+        app: app-elias-bahamondes
+    spec:
+      containers:
+        - name: app-elias-bahamondes
+          # Tag por nombre (no por version). Jenkins publica tambien :3.0.0
+          image: docker.io/cockfla/tarea-final:elias-bahamondes
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            - name: AMBIENTE
+              valueFrom:
+                configMapKeyRef:
+                  name: config-elias-bahamondes
+                  key: AMBIENTE
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: secret-elias-bahamondes
+                  key: API_KEY
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-elias-bahamondes
+  namespace: ns-elias-bahamondes
+  labels:
+    app: app-elias-bahamondes
+spec:
+  type: ClusterIP
+  selector:
+    app: app-elias-bahamondes
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
