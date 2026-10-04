@@ -1,3 +1,3 @@
 $ kubectl get svc svc-elias-bahamondes -n ns-elias-bahamondes -o wide
-NAME                   TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE     SELECTOR
-svc-elias-bahamondes   ClusterIP   10.96.138.66   <none>        80/TCP    3m29s   app=app-elias-bahamondes
+NAME                   TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE   SELECTOR
+svc-elias-bahamondes   ClusterIP   10.96.138.66   <none>        80/TCP    36m   app=app-elias-bahamondes

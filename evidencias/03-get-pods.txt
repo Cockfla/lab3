@@ -1,4 +1,4 @@
 $ kubectl get pods -n ns-elias-bahamondes -o wide
-NAME                                    READY   STATUS    RESTARTS   AGE     IP           NODE                    NOMINATED NODE   READINESS GATES
-app-elias-bahamondes-7776fc49bf-spgq8   1/1     Running   0          3m28s   10.244.0.6   desktop-control-plane   <none>           <none>
-app-elias-bahamondes-7776fc49bf-xl8lr   1/1     Running   0          3m28s   10.244.0.5   desktop-control-plane   <none>           <none>
+NAME                                    READY   STATUS    RESTARTS   AGE   IP            NODE                    NOMINATED NODE   READINESS GATES
+app-elias-bahamondes-5fcc6cb9f5-5j9dl   1/1     Running   0          39s   10.244.0.14   desktop-control-plane   <none>           <none>
+app-elias-bahamondes-5fcc6cb9f5-f45mn   1/1     Running   0          44s   10.244.0.13   desktop-control-plane   <none>           <none>
